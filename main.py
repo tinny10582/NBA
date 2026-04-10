@@ -5,7 +5,7 @@ import pandas as pd
 # 🔑 設定
 # ===============================
 ODDS_API_KEY = "459db2b0ceca5d2103a479358f6b163b"
-DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1492283303217070080/lbrvzppTz-h9EcshXSHue6NOtAJY31CjT1jWPmS0U_2MV8Ps1O1zp--rPuoGF9LlNNGk  "
+DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1492283303217070080/lbrvzppTz-h9EcshXSHue6NOtAJY31CjT1jWPmS0U_2MV8Ps1O1zp--rPuoGF9LlNNGk"
 
 
 # ===============================
