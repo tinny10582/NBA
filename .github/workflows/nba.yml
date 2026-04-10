@@ -1,156 +1,21 @@
-import requests
-import pandas as pd
-import random
+name: NBA Bot
 
-# ===============================
-# 🔑 設定
-# ===============================
-ODDS_API_KEY = "459db2b0ceca5d2103a479358f6b163b"
-DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1492283303217070080/lbrvzppTz-h9EcshXSHue6NOtAJY31CjT1jWPmS0U_2MV8Ps1O1zp--rPuoGF9LlNNGk"
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
 
-# ===============================
-# 📊 抓NBA賠率
-# ===============================
-def get_odds():
-    url = f"https://api.the-odds-api.com/v4/sports/basketball_nba/odds/?apiKey={ODDS_API_KEY}&regions=us&markets=h2h"
-    res = requests.get(url)
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
 
-    if res.status_code != 200:
-        return pd.DataFrame()
+    steps:
+    - uses: actions/checkout@v3
 
-    data = res.json()
-    games = []
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
 
-    for game in data:
-        home = game["home_team"]
-        away = game["away_team"]
+    - run: pip install pandas requests
 
-        for bookmaker in game["bookmakers"]:
-            for market in bookmaker["markets"]:
-                for outcome in market["outcomes"]:
-                    games.append({
-                        "match": f"{away} vs {home}",
-                        "team": outcome["name"],
-                        "odds": outcome["price"]
-                    })
-
-    return pd.DataFrame(games)
-
-# ===============================
-# 🧠 簡化模型（可升級）
-# ===============================
-def model_predict():
-    scoreA = random.randint(100,120)
-    scoreB = random.randint(95,115)
-    total = scoreA + scoreB
-    diff = scoreA - scoreB
-    prob = random.uniform(0.55,0.62)
-
-    return scoreA, scoreB, total, diff, prob
-
-# ===============================
-# ⭐ 星級
-# ===============================
-def get_star(prob, ev):
-    if prob >= 0.60 and ev >= 0.08:
-        return 3
-    elif prob >= 0.57 and ev >= 0.05:
-        return 2
-    elif prob >= 0.54 and ev >= 0.02:
-        return 1
-    else:
-        return 0
-
-# ===============================
-# 🎯 分析
-# ===============================
-def analyze(df):
-    results = []
-
-    matches = df["match"].unique()
-
-    for match in matches:
-        sub = df[df["match"] == match]
-        odds = sub.iloc[0]["odds"]
-
-        scoreA, scoreB, total, diff, prob = model_predict()
-        ev = prob * odds - 1
-
-        # 三盤判斷
-        if diff > 0:
-            ml = sub.iloc[0]["team"]
-        else:
-            ml = sub.iloc[-1]["team"]
-
-        spread = "讓分方" if diff > 5 else "受讓方"
-        total_pick = "大分" if total > 215 else "小分"
-
-        # 👉 優先大小分
-        pick = total_pick
-
-        star = get_star(prob, ev)
-
-        if star > 0:
-            results.append({
-                "match": match,
-                "pick": pick,
-                "prob": prob,
-                "star": star
-            })
-
-    return pd.DataFrame(results)
-
-# ===============================
-# 🔗 串關
-# ===============================
-def build_parlay(df):
-    df = df.sort_values(by=["star","prob"], ascending=False)
-    picks = df.head(5)
-
-    combos = []
-
-    for i in range(len(picks)):
-        for j in range(i+1, len(picks)):
-            if picks.iloc[i]["match"] != picks.iloc[j]["match"]:
-                combos.append((picks.iloc[i], picks.iloc[j]))
-
-    return combos[:3]
-
-# ===============================
-# 📲 發送
-# ===============================
-def send(msg):
-    requests.post(DISCORD_WEBHOOK, json={"content": msg})
-
-# ===============================
-# 🚀 主程式
-# ===============================
-df = get_odds()
-
-if df.empty:
-    send("❌ 今日無賽事或API錯誤")
-else:
-    result = analyze(df)
-
-    if result.empty:
-        send("今天沒有符合條件的推薦")
-    else:
-        parlay = build_parlay(result)
-
-        msg = "🔥【NBA星級推薦】🔥\n━━━━━━━━━━\n\n"
-
-        for s in [3,2,1]:
-            sub = result[result["star"] == s]
-            if len(sub) > 0:
-                msg += f"⭐{s}星\n"
-                for r in sub.itertuples():
-                    msg += f"{r.match}\n👉 {r.pick}\n勝率:{round(r.prob*100,1)}%\n\n"
-
-        msg += "━━━━━━━━━━\n🔥串2關推薦\n"
-
-        for i,(a,b) in enumerate(parlay,1):
-            msg += f"\n第{i}組\n👉 {a['pick']}（{a['match']}）\n👉 {b['pick']}（{b['match']}）\n"
-
-        msg += "\n━━━━━━━━━━\n⚠️ 由3星開始下注"
-
-        send(msg)
+    - run: python main.py
