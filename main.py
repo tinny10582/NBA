@@ -7,18 +7,23 @@ import pandas as pd
 ODDS_API_KEY = "459db2b0ceca5d2103a479358f6b163b"
 DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1492283303217070080/lbrvzppTz-h9EcshXSHue6NOtAJY31CjT1jWPmS0U_2MV8Ps1O1zp--rPuoGF9LlNNGk  "
 
+
 # ===============================
-# 📊 假資料（之後可換API）
+# 📊 基礎球隊數據（可自行擴充）
 # ===============================
 team_stats = {
     "Lakers": {"off":115,"def":112,"pace":100},
     "Warriors": {"off":118,"def":115,"pace":102},
     "Celtics": {"off":117,"def":110,"pace":99},
     "Bucks": {"off":116,"def":111,"pace":101},
+    "Nuggets": {"off":117,"def":112,"pace":98},
+    "Suns": {"off":116,"def":113,"pace":100},
+    "Heat": {"off":110,"def":108,"pace":96},
+    "Clippers": {"off":114,"def":111,"pace":99},
 }
 
 # ===============================
-# 📊 抓賠率
+# 📊 抓NBA賠率
 # ===============================
 def get_odds():
     url = f"https://api.the-odds-api.com/v4/sports/basketball_nba/odds/?apiKey={ODDS_API_KEY}&regions=us&markets=h2h"
@@ -31,23 +36,23 @@ def get_odds():
     games = []
 
     for game in data:
-        home = game["home_team"]
-        away = game["away_team"]
-
         games.append({
-            "home": home,
-            "away": away
+            "home": game["home_team"],
+            "away": game["away_team"]
         })
 
     return pd.DataFrame(games)
 
 # ===============================
-# 🧠 真實模型
+# 🧠 預測模型（改良版）
 # ===============================
 def predict(home, away):
 
-    if home not in team_stats or away not in team_stats:
-        return None
+    # 👉 若沒有資料，自動補平均值（重點修正）
+    if home not in team_stats:
+        team_stats[home] = {"off":112,"def":112,"pace":100}
+    if away not in team_stats:
+        team_stats[away] = {"off":112,"def":112,"pace":100}
 
     A = team_stats[home]
     B = team_stats[away]
@@ -60,17 +65,17 @@ def predict(home, away):
     total = score_home + score_away
     diff = score_home - score_away
 
-    prob = 0.55 + (diff / 50)
+    prob = 0.5 + (diff / 40)
 
     return score_home, score_away, total, diff, prob
 
 # ===============================
-# ⭐ 星級
+# ⭐ 星級評分
 # ===============================
 def get_star(prob):
     if prob >= 0.60:
         return 3
-    elif prob >= 0.57:
+    elif prob >= 0.56:
         return 2
     else:
         return 1
@@ -83,12 +88,8 @@ def analyze(df):
     results = []
 
     for _, row in df.iterrows():
-        p = predict(row["home"], row["away"])
 
-        if not p:
-            continue
-
-        sh, sa, total, diff, prob = p
+        sh, sa, total, diff, prob = predict(row["home"], row["away"])
 
         pick_total = "大分" if total > 215 else "小分"
         pick_ml = row["home"] if diff > 0 else row["away"]
@@ -105,7 +106,7 @@ def analyze(df):
     return pd.DataFrame(results)
 
 # ===============================
-# 🔗 串關
+# 🔗 串關（固定2關）
 # ===============================
 def build_parlay(df):
 
@@ -132,29 +133,27 @@ def send(msg):
 df = get_odds()
 
 if df.empty:
-    send("❌ 無比賽")
+    send("❌ 今日無比賽或API錯誤")
 else:
 
     result = analyze(df)
 
-    if result.empty:
-        send("無分析資料")
-    else:
+    parlay = build_parlay(result)
 
-        parlay = build_parlay(result)
+    msg = "🔥【NBA進階分析】🔥\n━━━━━━━━━━\n\n"
 
-        msg = "🔥【NBA進階分析】🔥\n━━━━━━━━\n\n"
+    for s in [3,2,1]:
+        sub = result[result["star"] == s]
+        if len(sub) > 0:
+            msg += f"⭐{s}星\n"
+            for r in sub.itertuples():
+                msg += f"{r.match}\n👉 {r.pick}\n勝率:{round(r.prob*100,1)}%\n\n"
 
-        for s in [3,2,1]:
-            sub = result[result["star"] == s]
-            if len(sub)>0:
-                msg += f"⭐{s}星\n"
-                for r in sub.itertuples():
-                    msg += f"{r.match}\n👉 {r.pick}\n勝率:{round(r.prob*100,1)}%\n\n"
+    msg += "━━━━━━━━━━\n🔥串2關推薦\n"
 
-        msg += "━━━━━━━━\n🔥串關推薦\n"
+    for i,(a,b) in enumerate(parlay,1):
+        msg += f"\n第{i}組\n👉 {a['pick']}（{a['match']}）\n👉 {b['pick']}（{b['match']}）\n"
 
-        for i,(a,b) in enumerate(parlay,1):
-            msg += f"\n第{i}組\n👉 {a['pick']}（{a['match']}）\n👉 {b['pick']}（{b['match']}）\n"
+    msg += "\n━━━━━━━━━━\n⚠️ 由高星開始下注"
 
-        send(msg)
+    send(msg)
