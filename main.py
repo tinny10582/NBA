@@ -1,3 +1,4 @@
+
 import requests
 import pandas as pd
 
@@ -124,5 +125,11 @@ def main():
     print("🔥 完成")
 
 # ⭐⭐ 這行最重要 ⭐⭐
+def main():
+    print("🔥 main真的有跑")
+    print("🔥 系統開始")
+    ...
+    send(msg)
+
 if __name__ == "__main__":
     main()
