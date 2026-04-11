@@ -9,7 +9,25 @@ DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1492283303217070080/lbrvzppT
 
 
 # ===============================
-# 📊 基礎球隊數據（可自行擴充）
+# 📲 發送（穩定版）
+# ===============================
+def send(msg):
+    try:
+        res = requests.post(
+            DISCORD_WEBHOOK,
+            json={"content": msg},
+            timeout=10
+        )
+        print("Discord狀態:", res.status_code)
+        print(res.text)
+    except Exception as e:
+        print("發送錯誤:", e)
+
+# 👉 一開始就測試（保證有訊息）
+send("🔥 系統啟動")
+
+# ===============================
+# 📊 球隊數據（簡化）
 # ===============================
 team_stats = {
     "Lakers": {"off":115,"def":112,"pace":100},
@@ -26,29 +44,36 @@ team_stats = {
 # 📊 抓NBA賠率
 # ===============================
 def get_odds():
-    url = f"https://api.the-odds-api.com/v4/sports/basketball_nba/odds/?apiKey={ODDS_API_KEY}&regions=us&markets=h2h"
-    res = requests.get(url)
+    try:
+        url = f"https://api.the-odds-api.com/v4/sports/basketball_nba/odds/?apiKey={ODDS_API_KEY}&regions=us&markets=h2h"
+        res = requests.get(url, timeout=10)
 
-    if res.status_code != 200:
+        print("API狀態:", res.status_code)
+
+        if res.status_code != 200:
+            send(f"❌ API錯誤: {res.status_code}")
+            return pd.DataFrame()
+
+        data = res.json()
+        games = []
+
+        for game in data:
+            games.append({
+                "home": game["home_team"],
+                "away": game["away_team"]
+            })
+
+        return pd.DataFrame(games)
+
+    except Exception as e:
+        send(f"❌ API例外錯誤: {e}")
         return pd.DataFrame()
 
-    data = res.json()
-    games = []
-
-    for game in data:
-        games.append({
-            "home": game["home_team"],
-            "away": game["away_team"]
-        })
-
-    return pd.DataFrame(games)
-
 # ===============================
-# 🧠 預測模型（改良版）
+# 🧠 預測模型
 # ===============================
 def predict(home, away):
 
-    # 👉 若沒有資料，自動補平均值（重點修正）
     if home not in team_stats:
         team_stats[home] = {"off":112,"def":112,"pace":100}
     if away not in team_stats:
@@ -67,10 +92,10 @@ def predict(home, away):
 
     prob = 0.5 + (diff / 40)
 
-    return score_home, score_away, total, diff, prob
+    return total, diff, prob
 
 # ===============================
-# ⭐ 星級評分
+# ⭐ 星級
 # ===============================
 def get_star(prob):
     if prob >= 0.60:
@@ -89,16 +114,14 @@ def analyze(df):
 
     for _, row in df.iterrows():
 
-        sh, sa, total, diff, prob = predict(row["home"], row["away"])
+        total, diff, prob = predict(row["home"], row["away"])
 
-        pick_total = "大分" if total > 215 else "小分"
-        pick_ml = row["home"] if diff > 0 else row["away"]
-
+        pick = "大分" if total > 215 else "小分"
         star = get_star(prob)
 
         results.append({
             "match": f"{row['away']} vs {row['home']}",
-            "pick": pick_total,
+            "pick": pick,
             "prob": prob,
             "star": star
         })
@@ -106,7 +129,7 @@ def analyze(df):
     return pd.DataFrame(results)
 
 # ===============================
-# 🔗 串關（固定2關）
+# 🔗 串關
 # ===============================
 def build_parlay(df):
 
@@ -122,40 +145,39 @@ def build_parlay(df):
     return combos[:3]
 
 # ===============================
-# 📲 發送
-# ===============================
-def send(msg):
-    requests.post(DISCORD_WEBHOOK, json={"content": msg})
-
-# ===============================
 # 🚀 主程式
 # ===============================
 df = get_odds()
 
 if df.empty:
-    send("❌ 今日無比賽或API錯誤")
+    send("⚠️ 今日無比賽或API無資料")
 else:
 
     result = analyze(df)
 
-    parlay = build_parlay(result)
+    if result.empty:
+        send("⚠️ 沒有分析結果")
+    else:
 
-    msg = "🔥【NBA進階分析】🔥\n━━━━━━━━━━\n\n"
+        parlay = build_parlay(result)
 
-    for s in [3,2,1]:
-        sub = result[result["star"] == s]
-        if len(sub) > 0:
-            msg += f"⭐{s}星\n"
-            for r in sub.itertuples():
-                msg += f"{r.match}\n👉 {r.pick}\n勝率:{round(r.prob*100,1)}%\n\n"
+        msg = "🔥【NBA分析】🔥\n━━━━━━━━━━\n\n"
 
-    msg += "━━━━━━━━━━\n🔥串2關推薦\n"
+        for s in [3,2,1]:
+            sub = result[result["star"] == s]
+            if len(sub) > 0:
+                msg += f"⭐{s}星\n"
+                for r in sub.itertuples():
+                    msg += f"{r.match}\n👉 {r.pick}\n勝率:{round(r.prob*100,1)}%\n\n"
 
-    for i,(a,b) in enumerate(parlay,1):
-        msg += f"\n第{i}組\n👉 {a['pick']}（{a['match']}）\n👉 {b['pick']}（{b['match']}）\n"
+        msg += "━━━━━━━━━━\n🔥串2關推薦\n"
 
-    msg += "\n━━━━━━━━━━\n⚠️ 由高星開始下注"
+        for i,(a,b) in enumerate(parlay,1):
+            msg += f"\n第{i}組\n👉 {a['pick']}（{a['match']}）\n👉 {b['pick']}（{b['match']}）\n"
 
-    send(msg)
+        msg += "\n━━━━━━━━━━\n⚠️ 由高星開始下注"
 
-send("🔥 測試成功")
+        send(msg)
+
+# 👉 最後強制測試
+send("🔥 程式結束")
